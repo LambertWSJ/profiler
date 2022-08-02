@@ -1,16 +1,18 @@
 CC = gcc
-FLGAGS = -lpthread -g -w
+CFLGAG = -w
+CFLAGS += -include common.h
 DST = main
 SRC = $(DST).c
 
 OBJS = $(DST).o 
 OBJS += profile.o
+OBJS += map.o
 
 %.o: %.c
-	$(CC) -c -o $@ $< -g
+	$(CC) -c -o $@ $< $(CFLAGS) -g
 
 build: $(OBJS)
-	-$(CC) $(FLGAGS) -o $(DST) $^
+	$(CC) $(CFLGAGS) -o $(DST) $^ -g
 
 run: build
 	./$(DST)

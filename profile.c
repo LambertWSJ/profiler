@@ -3,14 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-profile_t *profile_init()
-{
-    profile_t *profiler = malloc(sizeof(profile_t));
-    profiler->size = 0;
-    profiler->top = 0;
-    return profiler;
-}
-
 static time_t duration(struct timespec start, struct timespec end)
 {
     return end.tv_nsec - start.tv_nsec +
@@ -28,23 +20,45 @@ static item_t *item_init(char *label)
     return item;
 }
 
-static item_t *find_or_add_item(profile_t *profiler, char *label)
+
+
+static item_t *find_or_add_item(profile_t *profiler, uint32_t key, char *label)
 {
-    item_t **items = profiler->items;
+    map_t map = profiler->map;
+    map_iter_t it;
     item_t *item = NULL;
-    for (int i = 0; i < profiler->size; i++) {
-        if (!strcmp(items[i]->label, label)) {
-            items[i]->count++;
-            return items[i];
+    map_find(map, &it, &key);
+    if (!map_at_end(map, &it)) {
+        item = map_iter_value(&it, item_t *);
+        item->count++;
+        return item;
+    } else {
+        item_t *item = item_init(label);
+        if (profiler->size + 10 > profiler->capacity) {
+            profiler->capacity += 100;
+            profiler->items = realloc(
+                profiler->items, sizeof(profiler->capacity * sizeof(item_t *)));
         }
+        profiler->items[profiler->size++] = item;
+        map_insert(map, &key, &item);
+        return item;
     }
-    item = item_init(label);
-    profiler->items[profiler->size++] = item;
-    return item;
 }
 
-void profile_start(profile_t *profiler, const char *fmt, ...)
+profile_t *profile_init()
 {
+    profile_t *profiler = malloc(sizeof(profile_t));
+    profiler->map = map_init(uint32_t, item_t *, map_cmp_uint);
+    profiler->capacity = 100;
+    profiler->items = malloc(sizeof(item_t *) * profiler->capacity);
+    profiler->size = 0;
+    profiler->top = 0;
+    return profiler;
+}
+
+void profile_start(profile_t *profiler, uint32_t key, char *fmt, ...)
+{
+    // format label
     va_list args;
     va_start(args, fmt);
     size_t label_len = 50 * sizeof(char);
@@ -52,9 +66,10 @@ void profile_start(profile_t *profiler, const char *fmt, ...)
     vsnprintf(label, label_len, fmt, args);
     va_end(args);
 
-    item_t *item = find_or_add_item(profiler, label);
+    item_t *item = find_or_add_item(profiler, key, label);
     profiler->stack[++profiler->top] = item;
     profiler->cur = item;
+    puts(item->label);
 }
 
 void profile_end(profile_t *profiler)
@@ -75,6 +90,7 @@ void profile_log(profile_t *profiler, char *log_file, char *opt_prog_name)
     FILE *file = fopen(log_file, "w");
     size_t size = profiler->size;
     item_t *_items[size];
+
 
     memcpy(_items, profiler->items, sizeof(item_t *) * size);
 
@@ -97,9 +113,11 @@ void profile_delete(profile_t *profiler)
     if (!profiler)
         return;
     size_t size = profiler->size;
+    map_delete(profiler->map);
     for (size_t i = 0; i < size; i++) {
         free(profiler->items[i]->label);
         free(profiler->items[i]);
     }
+    free(profiler->items);
     free(profiler);
 }
